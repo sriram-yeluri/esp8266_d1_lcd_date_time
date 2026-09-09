@@ -11,4 +11,4 @@ Date and Time display on LCD with esp8266 D1 mini
 * Open Arduino IDE and Go to Sketch > Include Library > Manage Libraries.
 * Install LiquidCrystal_I2C by Frank de Brabander.
 * Install NTPClient by Fabrice Weinberg
-
+* Install WiFiManager by tablatronix
