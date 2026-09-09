@@ -34,10 +34,10 @@ int displayScreenIdx = 0;
 
 // Helper function to convert raw dBm to a text string
 const char* getSignalQuality(long rssi) {
-  if (rssi >= -50) return "Exclent";
-  if (rssi >= -65) return "Good     ";
-  if (rssi >= -75) return "Fair     ";
-  return "Poor     ";
+  if (rssi >= -50) return "Excl"; // Excellent
+  if (rssi >= -65) return "Good"; // Good
+  if (rssi >= -75) return "Fair"; // Fair
+  return "Poor";                  // Poor
 }
 
 void setup() {
@@ -132,9 +132,10 @@ void loop() {
       case 2: {
         // Screen 3: WiFi Strength (e.g., "WiFi: Good -61dB")
         long rssi = WiFi.RSSI();
-        char wifiBuffer[16];
-        // Prints both readable rating and exact dBm value to fit 16 characters
-        snprintf(wifiBuffer, sizeof(wifiBuffer), "WF:%s %ddBm", getSignalQuality(rssi), rssi);
+        char wifiBuffer[17]; // 16 characters + 1 null terminator
+        
+        // This layout: "WiFi: Excl -45dBm" is exactly 16 characters long!
+        snprintf(wifiBuffer, sizeof(wifiBuffer), "WiFi: %s %ddBm", getSignalQuality(rssi), rssi);
         lcd.print(wifiBuffer);
         break;
       }
