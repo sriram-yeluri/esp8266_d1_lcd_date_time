@@ -1,10 +1,18 @@
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
-#include <WiFiManager.h> // Library handles connection and portal logic
+#include <WiFiManager.h> 
+#include <DoubleResetDetector.h> // Handles detecting rapid hardware reset presses
 #include <time.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+
+// --- Reset Detector Config ---
+// Number of seconds to look out for a second button press
+#define DRD_TIMEOUT 2.0
+// RTC Memory Address block used to track the tracking flag
+#define DRD_ADDRESS 0
+DoubleResetDetector drd(DRD_TIMEOUT, DRD_ADDRESS);
 
 // --- Timezone Configuration ---
 const long timezoneOffsetInSeconds = 19800; 
@@ -30,17 +38,25 @@ void setup() {
   lcd.init();
   lcd.backlight();
 
-  // Initialize WiFiManager
   WiFiManager wm;
+
+  // Check if this boot was caused by a rapid double-reset
+  if (drd.detectDoubleReset()) {
+    lcd.setCursor(0, 0);
+    lcd.print("Reset Triggered!");
+    lcd.setCursor(0, 1);
+    lcd.print("Clearing WiFi...");
+    
+    wm.resetSettings(); // Wipes saved credentials out of the internal flash memory
+    delay(3000);
+    lcd.clear();
+  }
 
   lcd.setCursor(0, 0);
   lcd.print("Checking WiFi...");
-
-  // Optional: Automatically close configuration portal if user does nothing for 3 minutes
   wm.setConfigPortalTimeout(180);
 
-  // This creates an open hotspot named "ESP8266-Clock-Setup" if it can't connect to saved networks
-  // The code stays stuck here until your phone configures it
+  // If credentials were wiped, this will automatically launch the setup portal
   if (!wm.autoConnect("ESP8266-Clock-Setup")) {
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -51,28 +67,30 @@ void setup() {
     ESP.restart();
   }
 
-  // If you reach here, you are connected to Wi-Fi!
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("WiFi Connected!");
   lcd.setCursor(0, 1);
   lcd.print("Syncing Time...");
 
-  // Initialize native ESP8266 NTP client config
   configTime(timezoneOffsetInSeconds, daylightOffsetInSeconds, "pool.ntp.org", "time.nist.gov");
 
-  // Wait until time is successfully fetched from the internet
   time_t now = time(nullptr);
   while (now < 8 * 3600 * 2) {
     delay(500);
     now = time(nullptr);
   }
   lcd.clear();
+
+  // Deactivate the tracker flag once setup finishes successfully so normal runs don't trigger it
+  drd.stop();
 }
 
 void loop() {
+  // Keep monitoring the detector status loop internally
+  drd.loop();
+
   unsigned long currentMillis = millis();
-  
   time_t now = time(nullptr);
   struct tm* ptm = localtime(&now); 
 
@@ -80,7 +98,7 @@ void loop() {
   if (currentMillis - lastClockTime >= clockInterval) {
     lastClockTime = currentMillis;
     
-    char timeBuffer[16];
+    char timeBuffer[17];
     strftime(timeBuffer, sizeof(timeBuffer), "Time: %H:%M:%S", ptm);
     
     lcd.setCursor(0, 0);
@@ -98,7 +116,7 @@ void loop() {
     if (showDayToggle) {
       lcd.print(daysOfWeek[ptm->tm_wday]);
     } else {
-      char dateBuffer[16];
+      char dateBuffer[17];
       snprintf(dateBuffer, sizeof(dateBuffer), "%02d %s %d", ptm->tm_mday, monthsOfYear[ptm->tm_mon], ptm->tm_year + 1900);
       lcd.print(dateBuffer);
     }
