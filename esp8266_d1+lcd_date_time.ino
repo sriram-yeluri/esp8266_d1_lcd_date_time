@@ -34,7 +34,7 @@ int displayScreenIdx = 0;
 
 // Helper function to convert raw dBm to a text string
 const char* getSignalQuality(long rssi) {
-  if (rssi >= -50) return "Excellent";
+  if (rssi >= -50) return "Exclent";
   if (rssi >= -65) return "Good     ";
   if (rssi >= -75) return "Fair     ";
   return "Poor     ";
