@@ -2,15 +2,12 @@
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h> 
-#include <DoubleResetDetector.h> // Handles detecting rapid hardware reset presses
+#include <DoubleResetDetector.h> 
 #include <time.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-// --- Reset Detector Config ---
-// Number of seconds to look out for a second button press
 #define DRD_TIMEOUT 2.0
-// RTC Memory Address block used to track the tracking flag
 #define DRD_ADDRESS 0
 DoubleResetDetector drd(DRD_TIMEOUT, DRD_ADDRESS);
 
@@ -26,12 +23,22 @@ const char* monthsOfYear[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "
 
 // --- Timers (Non-blocking) ---
 unsigned long lastDisplayCycle = 0;
-const unsigned long cycleInterval = 4000; 
+const unsigned long cycleInterval = 4000; // Switch screens every 4 seconds
 
 unsigned long lastClockTime = 0;
 const unsigned long clockInterval = 500;  
 
-bool showDayToggle = true;
+// --- Display Screen State Tracker ---
+// 0 = Day Name, 1 = Date Stamp, 2 = WiFi Strength
+int displayScreenIdx = 0; 
+
+// Helper function to convert raw dBm to a text string
+const char* getSignalQuality(long rssi) {
+  if (rssi >= -50) return "Excellent";
+  if (rssi >= -65) return "Good     ";
+  if (rssi >= -75) return "Fair     ";
+  return "Poor     ";
+}
 
 void setup() {
   Wire.begin(4, 5);
@@ -40,14 +47,12 @@ void setup() {
 
   WiFiManager wm;
 
-  // Check if this boot was caused by a rapid double-reset
   if (drd.detectDoubleReset()) {
     lcd.setCursor(0, 0);
     lcd.print("Reset Triggered!");
     lcd.setCursor(0, 1);
     lcd.print("Clearing WiFi...");
-    
-    wm.resetSettings(); // Wipes saved credentials out of the internal flash memory
+    wm.resetSettings(); 
     delay(3000);
     lcd.clear();
   }
@@ -56,7 +61,6 @@ void setup() {
   lcd.print("Checking WiFi...");
   wm.setConfigPortalTimeout(180);
 
-  // If credentials were wiped, this will automatically launch the setup portal
   if (!wm.autoConnect("ESP8266-Clock-Setup")) {
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -81,13 +85,10 @@ void setup() {
     now = time(nullptr);
   }
   lcd.clear();
-
-  // Deactivate the tracker flag once setup finishes successfully so normal runs don't trigger it
   drd.stop();
 }
 
 void loop() {
-  // Keep monitoring the detector status loop internally
   drd.loop();
 
   unsigned long currentMillis = millis();
@@ -98,29 +99,48 @@ void loop() {
   if (currentMillis - lastClockTime >= clockInterval) {
     lastClockTime = currentMillis;
     
-    char timeBuffer[17];
+    char timeBuffer[16];
     strftime(timeBuffer, sizeof(timeBuffer), "Time: %H:%M:%S", ptm);
     
     lcd.setCursor(0, 0);
     lcd.print(timeBuffer); 
   }
 
-  // --- TASK 2: Alternate Day and Date on Row 1 ---
+  // --- TASK 2: Cycle Through Day, Date, and WiFi (Row 1) ---
   if (currentMillis - lastDisplayCycle >= cycleInterval) {
     lastDisplayCycle = currentMillis;
     
+    // Clear row 1 cleanly before adding new text
     lcd.setCursor(0, 1);
     lcd.print("                "); 
     lcd.setCursor(0, 1);
 
-    if (showDayToggle) {
-      lcd.print(daysOfWeek[ptm->tm_wday]);
-    } else {
-      char dateBuffer[17];
-      snprintf(dateBuffer, sizeof(dateBuffer), "%02d %s %d", ptm->tm_mday, monthsOfYear[ptm->tm_mon], ptm->tm_year + 1900);
-      lcd.print(dateBuffer);
+    switch (displayScreenIdx) {
+      case 0:
+        // Screen 1: Day Name (e.g., "Wednesday")
+        lcd.print(daysOfWeek[ptm->tm_wday]);
+        break;
+
+      case 1: {
+        // Screen 2: Date (e.g., "09 Sep 2026")
+        char dateBuffer[16];
+        snprintf(dateBuffer, sizeof(dateBuffer), "%02d %s %d", ptm->tm_mday, monthsOfYear[ptm->tm_mon], ptm->tm_year + 1900);
+        lcd.print(dateBuffer);
+        break;
+      }
+
+      case 2: {
+        // Screen 3: WiFi Strength (e.g., "WiFi: Good -61dB")
+        long rssi = WiFi.RSSI();
+        char wifiBuffer[16];
+        // Prints both readable rating and exact dBm value to fit 16 characters
+        snprintf(wifiBuffer, sizeof(wifiBuffer), "WF:%s %ddBm", getSignalQuality(rssi), rssi);
+        lcd.print(wifiBuffer);
+        break;
+      }
     }
 
-    showDayToggle = !showDayToggle; 
+    // Step to the next screen index loop (0 -> 1 -> 2 -> 0)
+    displayScreenIdx = (displayScreenIdx + 1) % 3; 
   }
 }
